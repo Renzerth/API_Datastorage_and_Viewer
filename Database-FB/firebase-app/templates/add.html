@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en-US" dir="ltr">
+<head>
+    <title>Sensor reading submit</title>
+    
+    <link rel="stylesheet" crossorigin="anonymous"
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" >
+    
+    <script crossorigin="anonymous"
+    src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js" >
+    </script>
+
+</head>
+
+<body>
+    <h2>Sensor reading submit</h2>
+
+    <form action="" method = "POST">
+        <div class="form-group row">
+          <label for="reading">Reading type</label>
+          <input type="text" class="form-control" name="reading" id="reading" value="{{entry.reading}}">
+        </div>
+        <div class="form-group row">
+            <label for="SensorID">Sensor ID</label>
+            <input type="text" class="form-control" name="sensorID" id="sensorID" value="{{entry.sensorID}}">
+        </div>
+        <div class="form-group row">
+            <label for="valReading">Reading Value</label>
+            <input type="text" class="form-control" name="valReading" id="valReading" value="{{entry.valReading}}">
+        </div>
+        <button type="btnAdd" class="btn btn-primary">Submit</button>
+        <a href="/" class="btn btn-primary">Cancel</a>
+      </form>
+</body>

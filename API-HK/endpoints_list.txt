@@ -1,0 +1,6 @@
+curl -i -u me:python http://localhost:5000/dataviewer/api/v0.1/sensors/temperature/A-1
+
+[API ENDPOINTS]
+http://localhost:5000/dataviewer/api/v0.1/sensors/temperature/A-1
+http://localhost:5000/dataviewer/api/v0.1/sensors/temperature/plot/series/A-2
+http://localhost:5000/dataviewer/api/v0.1/sensors/temperature/plot/heat/16
