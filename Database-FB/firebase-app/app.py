@@ -47,10 +47,6 @@ temperatRef = sensDb.document('temperature') # documents
 humidityRef = sensDb.document('humidity')
 
 
-# if localEnv
-    # loadDummyData('./static/data/Dummy.json')
-
-
 # Error handlers
 @app.errorhandler(400)
 def bad_request(error):
@@ -94,6 +90,15 @@ def delete_collection(coll_ref, batch_size):
 
     if deleted >= batch_size:
         return delete_collection(coll_ref, batch_size)
+
+def delete_subcollections(collectionRef, batch_size):
+    """
+    """
+    collections = collectionRef.collections()
+    for collection in collections:
+        delete_collection(collection, batch_size)
+    
+    return None
 
 def loadDummyData(sensDb, jsonFilename):
     """
@@ -188,23 +193,27 @@ def create():
                 sensorID = recvRequest.get('sensorID') # IF json is used instead: request.json['sensorID']
                 valReading = recvRequest.get('val')
                 
-            # Create DB entry
-            readingDb_ref = sensDb.document(readingType) # First hierarchy
-            currentKey = datetime.now().strftime("%d_%m_%Y")
-            thisSensor_ref = readingDb_ref.collection(currentKey).document(sensorID) # Second hierarchy - PUSH generates an unique entry key
-            thisSensor_ref.set({
-                u'VALUE': u'{}'.format(valReading),
-                u'T_STAMP': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-            })
+            #Test valid values
+            if sensorID and valReading:
+                
+                # Create DB entry
+                readingDb_ref = sensDb.document(readingType) # First hierarchy
+                currentKey = datetime.now().strftime("%d_%m_%Y")
+                thisSensor_ref = readingDb_ref.collection(currentKey).document(sensorID) # Second hierarchy - PUSH generates an unique entry key
+                thisSensor_ref.set({
+                    u'VALUE': u'{}'.format(valReading),
+                    u'T_STAMP': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                })
+                
+                # CollectionReference has add().
+                # DocumentReference has set(), update() and delete().
+                return jsonify({"Success": True, "Received": recvRequest}), 200
+            else:
              
-            # CollectionReference has add().
-            # DocumentReference has set(), update() and delete().
-             
-            return jsonify({"Success": True, "Received": recvRequest}), 200
+                abort(400) # Missing values in request
         
     except Exception as e:
         return f"An Error Occured: {e}"
-
 
 @app.route('/list', methods=['GET'])
 def read():
@@ -223,7 +232,7 @@ def read():
         if readingType and readingDate and sensorID:
             
             sensorRoute = u'{root}/{reading}/{date}/{id}'.format(root=dBroot,reading=readingType,date=readingDate,id=sensorID)
-            sensorEntry = db.document(sensorRoute).get().to_dict()
+            sensorEntry = db.document(sensorRoute).get().to_dict() # When using route, pass the main db object
             sensorEntry["sensorID"] = sensorID
 
         # If no args are passed, return all Entries ordered by child 'sensorID'.
@@ -253,26 +262,34 @@ def update():
         Requires 'readingType' and 'sensorID'.
     """
     try:
-    
         # Check request parameters
         if None in request.args.values(): #
             abort(400) # Missing values in request
         
+        # Get document parameters from request
         readingType = request.args.get('reading')
-        sensorID = request.args.get('sensorID')
         readingDate = request.args.get('date')
+        sensorID = request.args.get('sensorID')
         valToUpdate = request.args.get('updateVal')
         
-        sensorRoute = u'{root}/{reading}/{date}/{id}'.format(root=dBroot,reading=readingType,date=readingDate,id=sensorID)
-        sensorRef = sensDb.document(sensorRoute)
-        sensorRef.child(u'VALUE').update(valToUpdate)
-        
-        return jsonify({"success": True}), 200
+        # Test for path requirements
+        if readingType and readingDate and sensorID and valToUpdate:
+            sensorRoute = u'{root}/{reading}/{date}/{id}'.format(root=dBroot,reading=readingType,date=readingDate,id=sensorID)
+            sensorRef = db.document(sensorRoute)
+            sensorRef.update({
+                u'VALUE': valToUpdate,
+                u'T_STAMP': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            })
+            
+            return jsonify({"Updated":sensorRef.get().to_dict(),"success": True}), 200
+            
+        else:
+            abort(400) # Missing values in request
         
     except Exception as e:
         return f"An Error Occured: {e}"
 
-@app.route('/delete', methods=['GET', 'DELETE'])
+@app.route('/delete', methods=['DELETE'])
 def delete():
     """
         delete() : Delete a document or all subcollections
@@ -288,26 +305,67 @@ def delete():
         # Check for DELETE_ALL in URL query
         DELETE_ALL = request.args.get('DELETE_ALL')
         
-        # Deletes all readings of the 'reading type'
-        if DELETE_ALL:
-            sensorRef = sensDb.collection()
-            delete_collection(sensorRef, batch_size=2) # batch_size=2 -> Delete up to hierarchy 1
+        # Deletes all readings for each 'reading type'
+        if DELETE_ALL == "TRUE":
+            collectionName = sensDb.id
+            delete_subcollections(temperatRef, batch_size=10)
+            delete_subcollections(humidityRef, batch_size=10)
+            
+            temperatRef.delete()
+            humidityRef.delete()
+            
+            delete_collection(sensDb, batch_size=1) # batch_size=2 -> Delete up to hierarchy 4
+            return jsonify({"Dataset": collectionName, "Status": "Deleted"}), 200
             
         # Deletes only sensor ID of the 'reading type'
         else: 
-        
+            
             readingType = request.args.get('reading')
-            sensorID = request.args.get('sensorID')
+            deleteType =  request.args.get('deleteType')
+            deletePoint = request.args.get('deletePoint')
             
-            DBrefRoute = u'/{document}/{subcoll}'.format(document=readingType,subcoll=sensorID)
-            sensorRef = sensDb.collection(DBrefRoute)
-            
-            if len(sensorRef.items()) == 0:
-                abort(404) # Requested reference is missing
-            else: 
-                delete_collection(sensorRef, batch_size=1) # batch_size=1 -> Delete up to hierarchy 2
+            # Check for path requirements
+            if readingType and deleteType and deletePoint:
+                docPath = sensDb.document(readingType)._document_path.replace(db._database_string, '') # path to 'reading' document
+                docPath = docPath.split("/",2)[2] # Remove '/documents/' portion
                 
-        return jsonify({"success": True}), 200
+                # Delete subcollection
+                if deleteType == 'date':
+                    deletePath = docPath + '/' + deletePoint # Subcollection path
+                    delete_collection(db.collection(deletePath), batch_size=1) # Delete up to hierarchy 1
+                
+                    return jsonify({"Collection": deletePath,"Status":"Deleted"}), 200
+                
+                # Delete specific document
+                if deleteType == 'sensorID':
+                    sensorID = request.args.get('sensorID')
+                    if sensorID:
+                        deletePath = u'{root}/{reading}/{date}/{id}'.format(root=dBroot,reading=readingType,date=deletePoint,id=sensorID)
+                        db.document(deletePath).delete()
+                        return jsonify({"Document": deletePath,"Status":"Deleted"}), 200
+                        
+                    else:
+                        abort(400) # Missing values in request
+                
+                # Delete specific field of a document
+                if deleteType == 'field':
+                    sensorID = request.args.get('sensorID')
+                    fieldName = request.args.get('field')
+                    if sensorID and fieldName:
+                        sensorRoute = u'{root}/{reading}/{date}/{id}'.format(root=dBroot,reading=readingType,date=deletePoint,id=sensorID)
+                        sensorEntry = db.document(sensorRoute)
+                        
+                        db.document(sensorRoute)
+                        sensorEntry.update({
+                            fieldName: firestore.DELETE_FIELD
+                        })
+                        
+                        return jsonify({"Document": sensorID, "Field": fieldName, "Status":"Deleted"}), 200
+                    else:
+                        abort(400) # Missing values in request
+                        
+            else:
+                abort(400) # Missing values in request
         
     except Exception as e:
         return f"An Error Occured: {e}"
@@ -317,6 +375,9 @@ if __name__ == '__main__':
     if os.getenv('GAE_ENV', '').startswith('standard'):
         app.run()  # production
     else:
+        # if localEnv
+            # loadDummyData('./static/data/Dummy.json')
+        
         port = int(os.environ.get('PORT', 5000)) # Get port from environment. If not set, use 5000 instead.
         app.run(threaded=False, port=port, host="localhost", debug=True)  # localhost test
 
